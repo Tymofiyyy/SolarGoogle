@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar Controller</title>
+    
+    <!-- Google Sign In -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    
+    <!-- React -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style> 
+</head>
+<body>
+    <div id="root"></div>
+     
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+        
+        // Configuration - змініть на свої значення
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3000/api' 
+            : 'https://your-backend-url.com/api'; // Змініть на вашу URL
+        
+        const GOOGLE_CLIENT_ID = '691562298422-9l2h3ot4jj3rbvqnjrkpqhull7ff0cns.apps.googleusercontent.com'; // Змініть на ваш Google Client ID
+        
+        // SVG Icons
+        const Icons = {
+            Sun: ({className = "w-6 h-6"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+            ),
+            Power: ({className = "w-6 h-6"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+                    <line x1="12" y1="2" x2="12" y2="12"/>
+                </svg>
+            ),
+            Wifi: ({className = "w-4 h-4"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+                    <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+                    <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                    <line x1="12" y1="20" x2="12.01" y2="20"/>
+                </svg>
+            ),
+            WifiOff: ({className = "w-4 h-4"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                    <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+                    <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+                    <path d="M10.71 5.05A16 16 0 0 1 22.58 9"/>
+                    <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+                    <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+                    <line x1="12" y1="20" x2="12.01" y2="20"/>
+                </svg>
+            ),
+            Plus: ({className = "w-5 h-5"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+            ),
+            LogOut: ({className = "w-5 h-5"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+            ),
+            Activity: ({className = "w-3 h-3"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+            ),
+            Clock: ({className = "w-3 h-3"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+            ),
+            Trash2: ({className = "w-4 h-4"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
+                </svg>
+            ),
+            RefreshCw: ({className = "w-5 h-5"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+            ),
+            Share2: ({className = "w-4 h-4"}) => (
+                <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="18" cy="5" r="3"/>
+                    <circle cx="6" cy="12" r="3"/>
+                    <circle cx="18" cy="19" r="3"/>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+                </svg>
+            ),
+            Google: ({className = "w-5 h-5"}) => (
+                <svg className={className} viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+            )
+        };
+        
+        // Auth Context
+        const AuthContext = React.createContext(null);
+        
+        function SolarControllerApp() {
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [token, setToken] = useState(localStorage.getItem('authToken'));
+            
+            useEffect(() => {
+                // Initialize Google Sign In
+                if (window.google) {
+                    window.google.accounts.id.initialize({
+                        client_id: GOOGLE_CLIENT_ID,
+                        callback: handleGoogleLogin,
+                        auto_select: false,
+                        context: 'signin'
+                    });
+                }
+                
+                // Check if user is logged in
+                if (token) {
+                    fetchUserInfo();
+                } else {
+                    setLoading(false);
+                }
+            }, []);
+            
+            const fetchUserInfo = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/auth/me`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const userData = await response.json();
+                        setUser(userData);
+                    } else {
+                        // Token expired or invalid
+                        localStorage.removeItem('authToken');
+                        setToken(null);
+                    }
+                } catch (error) {
+                    console.error('Error fetching user info:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            
+            const handleGoogleLogin = async (response) => {
+                try {
+                    const res = await fetch(`${API_URL}/auth/google`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            credential: response.credential
+                        })
+                    });
+                    
+                    if (res.ok) {
+                        const data = await res.json();
+                        localStorage.setItem('authToken', data.token);
+                        setToken(data.token);
+                        setUser(data.user);
+                    } else {
+                        console.error('Login failed');
+                    }
+                } catch (error) {
+                    console.error('Error during login:', error);
+                }
+            };
+            
+            const logout = () => {
+                localStorage.removeItem('authToken');
+                setToken(null);
+                setUser(null);
+                window.google.accounts.id.disableAutoSelect();
+            };
+            
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-yellow-50 flex items-center justify-center">
+                        <div className="text-center">
+                            <Icons.Sun className="w-12 h-12 text-yellow-500 animate-spin mx-auto mb-4" />
+                            <p className="text-gray-600">Завантаження...</p>
+                        </div>
+                    </div>
+                );
+            }
+            
+            if (!user) {
+                return <LoginScreen />;
+            }
+            
+            return (
+                <AuthContext.Provider value={{ user, token, logout }}>
+                    <MainApp />
+                </AuthContext.Provider>
+            );
+        }
+        
+        function LoginScreen() {
+            useEffect(() => {
+                // Render Google Sign In button
+                window.google.accounts.id.renderButton(
+                    document.getElementById("googleSignInButton"),
+                    { 
+                        theme: "outline", 
+                        size: "large",
+                        width: 300,
+                        text: "continue_with",
+                        shape: "pill"
+                    }
+                );
+            }, []);
+            
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-yellow-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
+                        <div className="text-center mb-8">
+                            <Icons.Sun className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+                            <h1 className="text-2xl font-bold text-gray-800 mb-2">Solar Controller</h1>
+                            <p className="text-gray-600">Керуйте вашими сонячними панелями</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div id="googleSignInButton" className="flex justify-center"></div>
+                            
+                            <div className="text-center text-sm text-gray-500 mt-6">
+                                <p>Увійдіть за допомогою Google акаунту</p>
+                                <p className="mt-2">Ваші дані надійно захищені</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        
+        function MainApp() {
+            const { user, token, logout } = React.useContext(AuthContext);
+            const [devices, setDevices] = useState([]);
+            const [showAddDevice, setShowAddDevice] = useState(false);
+            const [showShareModal, setShowShareModal] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const updateIntervalRef = useRef(null);
+            
+            useEffect(() => {
+                fetchDevices();
+                
+                // Auto-refresh every 5 seconds
+                updateIntervalRef.current = setInterval(fetchDevices, 5000);
+                
+                return () => {
+                    if (updateIntervalRef.current) {
+                        clearInterval(updateIntervalRef.current);
+                    }
+                };
+            }, []);
+            
+            const fetchDevices = async () => {
+                try {
+                    const response = await fetch(`${API_URL}/devices`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        setDevices(data);
+                    }
+                    setLoading(false);
+                } catch (error) {
+                    console.error('Error fetching devices:', error);
+                    setLoading(false);
+                }
+            };
+             
+            const toggleRelay = async (deviceId, currentState) => {
+                try {
+                    await fetch(`${API_URL}/devices/${deviceId}/control`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            command: 'relay',
+                            state: !currentState
+                        })
+                    });
+                    
+                    // Update local state immediately
+                    setDevices(devices.map(d => 
+                        d.device_id === deviceId 
+                            ? { ...d, status: { ...d.status, relayState: !currentState } }
+                            : d
+                    ));
+                } catch (error) {
+                    console.error('Error toggling relay:', error);
+                }
+            };
+            
+            const deleteDevice = async (deviceId) => {
+                if (!confirm('Видалити цей пристрій?')) return;
+                
+                try {
+                    await fetch(`${API_URL}/devices/${deviceId}`, {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    fetchDevices();
+                } catch (error) {
+                    console.error('Error deleting device:', error);
+                }
+            };
+            
+            const AddDeviceModal = () => {
+                const [deviceId, setDeviceId] = useState('');
+                const [confirmationCode, setConfirmationCode] = useState('');
+                const [name, setName] = useState('');
+                const [error, setError] = useState('');
+                const [adding, setAdding] = useState(false);
+                
+                useEffect(() => {
+                    // Stop auto-refresh when modal is open
+                    if (updateIntervalRef.current) {
+                        clearInterval(updateIntervalRef.current);
+                    }
+                    
+                    return () => {
+                        // Resume auto-refresh when modal closes
+                        updateIntervalRef.current = setInterval(fetchDevices, 5000);
+                    };
+                }, []);
+                
+                const handleAddDevice = async () => {
+                    setError('');
+                    setAdding(true);
+                    
+                    try {
+                        const response = await fetch(`${API_URL}/devices`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({
+                                deviceId,
+                                confirmationCode,
+                                name
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            const data = await response.json();
+                            throw new Error(data.error || 'Failed to add device');
+                        }
+                        
+                        setShowAddDevice(false);
+                        fetchDevices();
+                    } catch (error) {
+                        setError(error.message);
+                        setAdding(false);
+                    }
+                };
+                
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+                            <h3 className="text-xl font-bold mb-4">Додати новий пристрій</h3>
+                            
+                            {error && (
+                                <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+                                    {error}
+                                </div>
+                            )}
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        ID пристрою
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={deviceId}
+                                        onChange={(e) => setDeviceId(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="ESP32_XXXXXX"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Код підтвердження
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={confirmationCode}
+                                        onChange={(e) => setConfirmationCode(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="123456"
+                                        maxLength="6"
+                                    />
+                                </div>
+                                
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Назва (опціонально)
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        placeholder="Сонячна панель гараж"
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="flex gap-3 mt-6">
+                                <button
+                                    onClick={() => setShowAddDevice(false)}
+                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                                    disabled={adding}
+                                >
+                                    Скасувати
+                                </button>
+                                <button
+                                    onClick={handleAddDevice}
+                                    className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                                    disabled={adding || !deviceId || !confirmationCode}
+                                >
+                                    {adding ? 'Додавання...' : 'Додати'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+            
+            const ShareDeviceModal = ({ device }) => {
+                const [email, setEmail] = useState('');
+                const [sharing, setSharing] = useState(false);
+                const [error, setError] = useState('');
+                const [success, setSuccess] = useState(false);
+                
+                const handleShare = async () => {
+                    setError('');
+                    setSharing(true);
+                    
+                    try {
+                        const response = await fetch(`${API_URL}/devices/${device.device_id}/share`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({ email })
+                        });
+                        
+                        if (!response.ok) {
+                            const data = await response.json();
+                            throw new Error(data.error || 'Failed to share device');
+                        }
+                        
+                        setSuccess(true);
+                        setTimeout(() => setShowShareModal(null), 2000);
+                    } catch (error) {
+                        setError(error.message);
+                        setSharing(false);
+                    }
+                };
+                
+                return (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+                            <h3 className="text-xl font-bold mb-4">Поділитися пристроєм</h3>
+                            <p className="text-gray-600 mb-4">
+                                {device.name} ({device.device_id})
+                            </p>
+                            
+                            {error && (
+                                <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+                                    {error}
+                                </div>
+                            )}
+                            
+                            {success ? (
+                                <div className="p-4 bg-green-100 text-green-700 rounded-lg text-center">
+                                    ✅ Доступ успішно надано!
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Email користувача
+                                        </label>
+                                        <input
+                                            type="email"
+                                            value={email}
+                                            onChange={(e) => setEmail(e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="user@example.com"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Користувач повинен спочатку увійти в систему
+                                        </p>
+                                    </div>
+                                    
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => setShowShareModal(null)}
+                                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                                            disabled={sharing}
+                                        >
+                                            Скасувати
+                                        </button>
+                                        <button
+                                            onClick={handleShare}
+                                            className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+                                            disabled={sharing || !email}
+                                        >
+                                            {sharing ? 'Надання доступу...' : 'Поділитися'}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+            
+            const DeviceCard = ({ device }) => {
+                const isOnline = device.status?.online || false;
+                const relayState = device.status?.relayState || false;
+                
+                return (
+                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-gray-800">{device.name}</h3>
+                            <div className="flex items-center gap-2">
+                                {isOnline ? (
+                                    <Icons.Wifi className="w-4 h-4 text-green-500" />
+                                ) : (
+                                    <Icons.WifiOff className="w-4 h-4 text-red-500" />
+                                )}
+                                <span className={`text-xs ${isOnline ? 'text-green-500' : 'text-red-500'}`}>
+                                    {isOnline ? 'Онлайн' : 'Офлайн'}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                            <div className="text-sm text-gray-500">
+                                {device.device_id}
+                                {device.is_owner && (
+                                    <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">
+                                        Власник
+                                    </span>
+                                )}
+                            </div>
+                            
+                            <div className="flex items-center gap-2">
+                                {device.is_owner && (
+                                    <button
+                                        onClick={() => setShowShareModal(device)}
+                                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+                                        title="Поділитися"
+                                    >
+                                        <Icons.Share2 />
+                                    </button>
+                                )}
+                                
+                                <button
+                                    onClick={() => deleteDevice(device.device_id)}
+                                    className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                    title="Видалити пристрій"
+                                >
+                                    <Icons.Trash2 />
+                                </button>
+                                
+                                <button
+                                    onClick={() => toggleRelay(device.device_id, relayState)}
+                                    disabled={!isOnline}
+                                    className={`p-3 rounded-full transition-all ${
+                                        relayState 
+                                            ? 'bg-yellow-400 text-white shadow-lg' 
+                                            : 'bg-gray-200 text-gray-600'
+                                    } ${!isOnline ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-xl'}`}
+                                >
+                                    <Icons.Power />
+                                </button>
+                            </div>
+                        </div>
+                        
+                        {device.status && isOnline && (
+                            <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2 text-xs">
+                                <div className="flex items-center gap-1">
+                                    <Icons.Activity />
+                                    <span className="text-gray-600">RSSI: {device.status.wifiRSSI} dBm</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <Icons.Clock />
+                                    <span className="text-gray-600">Uptime: {Math.floor((device.status.uptime || 0) / 3600)}h</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+            
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-yellow-50">
+                    {/* Header */}
+                    <div className="bg-white shadow-sm border-b border-gray-100">
+                        <div className="px-4 py-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Icons.Sun className="w-8 h-8 text-yellow-500" />
+                                    <h1 className="text-xl font-bold text-gray-800">Solar Controller</h1>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <img 
+                                            src={user.picture} 
+                                            alt={user.name}
+                                            className="w-8 h-8 rounded-full"
+                                        />
+                                        <span className="text-sm text-gray-600 hidden sm:block">
+                                            {user.name}
+                                        </span>
+                                    </div>
+                                    <button 
+                                        onClick={() => fetchDevices()}
+                                        className="p-2 hover:bg-gray-100 rounded-lg"
+                                        title="Оновити"
+                                    >
+                                        <Icons.RefreshCw />
+                                    </button>
+                                    <button
+                                        onClick={logout}
+                                        className="p-2 hover:bg-gray-100 rounded-lg text-gray-600"
+                                        title="Вийти"
+                                    >
+                                        <Icons.LogOut />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Content */}
+                    <div className="p-4">
+                        {/* Stats */}
+                        <div className="grid grid-cols-2 gap-3 mb-6">
+                            <div className="bg-white rounded-xl p-4 shadow-sm">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Icons.Power className="w-4 h-4 text-blue-500" />
+                                    <span className="text-sm text-gray-600">Активні</span>
+                                </div>
+                                <p className="text-2xl font-bold text-gray-800">
+                                    {devices.filter(d => d.status?.relayState).length}
+                                </p>
+                            </div>
+                            <div className="bg-white rounded-xl p-4 shadow-sm">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Icons.Wifi className="w-4 h-4 text-green-500" />
+                                    <span className="text-sm text-gray-600">Онлайн</span>
+                                </div>
+                                <p className="text-2xl font-bold text-gray-800">
+                                    {devices.filter(d => d.status?.online).length}
+                                </p>
+                            </div>
+                        </div>
+                        
+                        {/* Devices */}
+                        {loading && devices.length === 0 ? (
+                            <div className="text-center py-8">
+                                <div className="animate-pulse">
+                                    <div className="bg-white rounded-2xl h-24 mb-3"></div>
+                                    <div className="bg-white rounded-2xl h-24 mb-3"></div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {devices.map(device => (
+                                    <DeviceCard key={device.id} device={device} />
+                                ))}
+                                
+                                {/* Add Device Button */}
+                                <button
+                                    onClick={() => setShowAddDevice(true)}
+                                    className="w-full bg-white rounded-2xl p-4 shadow-sm border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 transition-all group"
+                                >
+                                    <div className="flex items-center justify-center gap-2 text-gray-600 group-hover:text-blue-600">
+                                        <Icons.Plus />
+                                        <span className="font-medium">Додати пристрій</span>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                        
+                        {devices.length === 0 && !loading && (
+                            <div className="text-center py-8">
+                                <Icons.Sun className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                                <p className="text-gray-500">Немає підключених пристроїв</p>
+                                <p className="text-sm text-gray-400 mt-2">Натисніть кнопку вище щоб додати перший</p>
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Modals */}
+                    {showAddDevice && <AddDeviceModal />}
+                    {showShareModal && <ShareDeviceModal device={showShareModal} />}
+                </div>
+            );
+        }
+        
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SolarControllerApp />);
+    </script>
+</body>
+</html>
